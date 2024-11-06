@@ -1,0 +1,32 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "1ea62e56ab925d7387950fd5eb36b355"
+name = "stable-sale-app"
+handle = "stable-sale-app-7"
+application_url = "https://dem-scenes-increasing-rim.trycloudflare.com"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products"
+
+[auth]
+redirect_urls = [
+  "https://dem-scenes-increasing-rim.trycloudflare.com/auth/callback",
+  "https://dem-scenes-increasing-rim.trycloudflare.com/auth/shopify/callback",
+  "https://dem-scenes-increasing-rim.trycloudflare.com/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2024-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+[pos]
+embedded = false
+
+[build]
+dev_store_url = "fashionfusion-finds.myshopify.com"
+automatically_update_urls_on_dev = true

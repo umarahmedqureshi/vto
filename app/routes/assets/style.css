@@ -1,0 +1,74 @@
+.visually-hidden {
+    display: none;
+}
+.visually-display-block {
+    display: block;
+}
+.visually-display-flex {
+    display: flex;
+}
+.inline-view-end {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.inline-view-end .Polaris-Icon {
+    margin: 0 0 !important;
+}
+
+.secondary-layout-child-hide {
+    display: none;
+}
+.secondary-layout-child-show {
+    display: block;
+}
+
+.secondary-layout-child-hide:has(> .Polaris-Layout__Section--oneThird) {
+    display: none !important;
+}
+.secondary-layout-child-show:has(> .Polaris-Layout__Section--oneThird) {
+    display: block !important;
+}
+
+.polaris-modal-frame {
+    height: 25px;
+}
+.polaris-modal-frame .Polaris-Frame {
+    background-color: #ffffff;
+}
+.polaris-modal-frame main.Polaris-Frame__Main {
+    border-inline-end: none !important;
+}
+.Polaris-IndexTable__ScrollBar {
+    display: none;
+}
+
+/* Hide the button initially */
+.hover-button {
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.Polaris-DataTable__TableRow:hover .hover-button {
+    opacity: 1;
+}
+
+.hover-button-container {
+    display: none; /* Hide by default */
+  }
+  
+  .show {
+    display: inline-block; /* Show when hovering over the row */
+  }
+  
+  /* Optional: Add styles for the row hover effect */
+  tr:hover .hover-button-container {
+    display: inline-block; /* Show the button on row hover */
+  }
+
+.m-4{
+    margin-top: 4rem;
+    margin-bottom: 4rem;
+}
+  

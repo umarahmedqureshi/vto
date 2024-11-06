@@ -1,92 +1,171 @@
-import { useLoaderData } from "@remix-run/react";
-import { json } from "@remix-run/node";
+import {
+  IndexTable,
+  LegacyCard,
+  useIndexResourceState,
+  Text,
+  Badge,
+  useBreakpoints,
+} from '@shopify/polaris';
+import React from 'react';
+import { useLoaderData, useFetcher } from "@remix-run/react";
+import { useEffect, useState } from "react";
+import { Card, Page, Pagination, DataTable } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 
-export async function loader({ request }) {
-  const { admin } = await authenticate.admin(request);
 
-  const fetchProducts = async (cursor = null) => {
-    const response = await admin.graphql(
-      `#graphql
-        query fetchProducts($cursor: String) {
-          products(first: 10, after: $cursor) {
-            edges {
-              node {
-                id
-                title
-                handle
-                status
-                variants(first: 10) {
-                  edges {
-                    node {
-                      id
-                      price
-                      barcode
-                      createdAt
-                    }
-                  }
+// Function to fetch products from Shopify API
+const fetchProducts = async (admin, cursor = null, direction = "next") => {
+const queryDirection = direction === "next" ? "after" : "before";
+const firstORLast = direction === "next" ? "first" : "last";
+const response = await admin.graphql(
+  `#graphql
+    query fetchProducts($cursor: String) {
+      products(${firstORLast}: 10, ${queryDirection}: $cursor, sortKey:TITLE) {
+        edges {
+          node {
+            id
+            title
+            handle
+            status
+            variants(first: 10) {
+              edges {
+                node {
+                  id
+                  price
+                  barcode
+                  createdAt
                 }
               }
-              cursor
-            }
-            pageInfo {
-              hasNextPage
             }
           }
+          cursor
         }
-      `,
-      {
-        variables: {
-          cursor,
-        },
+        pageInfo {
+          hasNextPage
+          hasPreviousPage
+          startCursor
+          endCursor
+        }
       }
-    );
+    }
+  `,
+  { variables: { cursor } }
+);
 
-    const responseJson = await response.json();
-    return responseJson.data.products;
+const responseJson = await response.json();
+return responseJson.data.products;
+};
+
+// Loader for initial products
+export const loader = async ({ request }) => {
+const { admin } = await authenticate.admin(request);
+const initialProducts = await fetchProducts(admin);
+
+return {
+  initialProducts: initialProducts.edges.map(({ node }) => node),
+  pageInfo: initialProducts.pageInfo,
+};
+};
+
+// Action for pagination requests
+export const action = async ({ request }) => {
+const formData = await request.formData();
+const cursor = formData.get("cursor");
+const direction = formData.get("direction");
+const { admin } = await authenticate.admin(request);
+
+const products = await fetchProducts(admin, cursor, direction);
+
+return {
+  products: products.edges.map(({ node }) => node),
+  pageInfo: products.pageInfo,
+};
+};
+
+
+export default function IndexTableWithPaginationExample() {
+  const { initialProducts, pageInfo: initialPageInfo } = useLoaderData();
+  const fetcher = useFetcher();
+  const [productData, setProductData] = useState(initialProducts);
+  const [pageInfo, setPageInfo] = useState(initialPageInfo);
+  const resourceName = {
+      singular: 'product',
+      plural: 'products',
   };
 
-  let products = [];
-  let hasNextPage = true;
-  let cursor = null;
+  useEffect(() => {
+      if (fetcher.data) {
+      setProductData(fetcher.data.products);
+      setPageInfo(fetcher.data.pageInfo);
+      }
+  }, [fetcher.data]);
 
-  // Loop through paginated results to fetch all products
-  while (hasNextPage) {
-    const result = await fetchProducts(cursor);
-    products = [...products, ...result.edges.map(edge => edge.node)];
-    hasNextPage = result.pageInfo.hasNextPage;
-    if (hasNextPage) {
-      cursor = result.edges[result.edges.length - 1].cursor;
-    }
-  }
+  const handlePagination = (cursor, direction) => {
+      fetcher.submit(
+      { cursor, direction },
+      { method: "post", action: "/app/pr1" } // Replace with the correct route
+      );
+  };
 
-  return json({ products });
-}
+  const {selectedResources, allResourcesSelected, handleSelectionChange} =
+      useIndexResourceState(productData);
 
-export default function ProductsPage() {
-  const { products } = useLoaderData();
+  const rowMarkup = productData.map(
+      (product,
+      index,
+      ) => (
+      <IndexTable.Row
+          id={product.id}
+          key={product.id}
+          selected={selectedResources.includes(product.id)}
+          position={index}
+      >
+          <IndexTable.Cell>
+          <Text variant="bodyMd" fontWeight="bold" as="span">
+              {product.title}
+          </Text>
+          </IndexTable.Cell>
+          {/* <IndexTable.Cell>{product.title}</IndexTable.Cell> */}
+          <IndexTable.Cell>{product.handle}</IndexTable.Cell>
+          <IndexTable.Cell>{product.status}</IndexTable.Cell>
+          <IndexTable.Cell>
+          <Text as="span" alignment="end" numeric>
+              {product.variants.edges[0]?.node.price || "-"}
+          </Text>
+          </IndexTable.Cell>
+          {/* <IndexTable.Cell>1111</IndexTable.Cell> */}
+      </IndexTable.Row>
+      ),
+  );
 
-  return (
-    <div>
-      <h1>Store Products</h1>
-      <ul>
-        {products.map((product) => (
-          <li key={product.id}>
-            <h2>{product.title}</h2>
-            <p>Status: {product.status}</p>
-            <p>Handle: {product.handle}</p>
-            <ul>
-              {product.variants.edges.map(({ node: variant }) => (
-                <li key={variant.id}>
-                  <p>Price: {variant.price}</p>
-                  <p>Barcode: {variant.barcode}</p>
-                  <p>Created At: {variant.createdAt}</p>
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </div>
+  return (    
+  <Page title="Product Index">
+      <Card>
+          <IndexTable
+              condensed={useBreakpoints().smDown}
+              resourceName={resourceName}
+              itemCount={productData.length}
+              selectedItemsCount={
+                  allResourcesSelected ? 'All' : selectedResources.length
+              }
+              onSelectionChange={handleSelectionChange}
+              headings={[
+                  {title: 'Title'},
+                  {title: 'Handle'},
+                  {title: 'Status'},
+                  {title: 'Price', alignment: 'end'},
+                  // {title: 'Created At'},
+              ]}
+              pagination={{
+                  hasNext: pageInfo.hasNextPage,
+                  onNext: () => {handlePagination(pageInfo.endCursor, "next")},
+                  hasPrevious: pageInfo.hasPreviousPage,
+                  onPrevious: () => {handlePagination(pageInfo.startCursor, "previous")},
+              }}
+          >
+              {rowMarkup}
+          </IndexTable>
+      </Card>
+  </Page>
   );
 }

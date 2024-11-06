@@ -1,133 +1,171 @@
-import { json, useLoaderData, useFetcher } from "@remix-run/react";
+import {
+  IndexTable,
+  LegacyCard,
+  useIndexResourceState,
+  Text,
+  Badge,
+  useBreakpoints,
+} from '@shopify/polaris';
+import React from 'react';
+import { useLoaderData, useFetcher } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Card, Page, Pagination, DataTable } from "@shopify/polaris";
-// import { fetchProducts } from "./utils/fetchProducts"; // Adjust the path to where fetchProducts is located
 import { authenticate } from "../shopify.server";
 
-export const loader = async ({ request }) => {
-  // const url = new URL(request.url);
-  // const cursor = url.searchParams.get("cursor") || null;
-  
-  const { admin } = await authenticate.admin(request);
 
-  // Fetch products with cursor for pagination
-  // const products = await fetchProducts(cursor, admin);
-
-  const fetchProducts = async (cursor = null) => {
-    const response = await admin.graphql(
-      `#graphql
-        query fetchProducts($cursor: String) {
-          products(first: 10, after: $cursor) {
-            edges {
-              node {
-                id
-                title
-                handle
-                status
-                variants(first: 10) {
-                  edges {
-                    node {
-                      id
-                      price
-                      barcode
-                      createdAt
-                    }
-                  }
+// Function to fetch products from Shopify API
+const fetchProducts = async (admin, cursor = null, direction = "next") => {
+const queryDirection = direction === "next" ? "after" : "before";
+const firstORLast = direction === "next" ? "first" : "last";
+const response = await admin.graphql(
+  `#graphql
+    query fetchProducts($cursor: String) {
+      products(${firstORLast}: 10, ${queryDirection}: $cursor, sortKey:TITLE) {
+        edges {
+          node {
+            id
+            title
+            handle
+            status
+            variants(first: 10) {
+              edges {
+                node {
+                  id
+                  price
+                  barcode
+                  createdAt
                 }
               }
-              cursor
-            }
-            pageInfo {
-              hasNextPage
-              endCursor
             }
           }
+          cursor
         }
-      `,
-      {
-        variables: {
-          cursor,
-        },
+        pageInfo {
+          hasNextPage
+          hasPreviousPage
+          startCursor
+          endCursor
+        }
       }
-    );
-  
-    const responseJson = await response.json();
-    return responseJson.data.products;
-  };
-  
-  let products = [];
-  let hasNextPage = true;
-  let endCursor = null;
-  
-  // Loop through paginated results to fetch all products
-  while (hasNextPage) {
-    const result = await fetchProducts(endCursor);
-    console.log("jidfjfk result",result);
+    }
+  `,
+  { variables: { cursor } }
+);
 
-    products = [...products, ...result.edges.map(edge => edge.node)];
-    hasNextPage = result.pageInfo.hasNextPage;
-    endCursor = result.pageInfo.endCursor;
-    // if (hasNextPage) {
-    //   // cursor = result.edges[result.edges.length - 1].cursor;
-    //   cursor = result.edges[result.edges.length - 1].cursor;
-    // }
-  }
-  console.log("jidfjfk products",products);
-
-
-  return json({
-    products: products.edges.map(({ node }) => node),
-    pageInfo: products.pageInfo,
-    nextCursor: products.edges[products.edges.length - 1]?.cursor || null,
-  });
+const responseJson = await response.json();
+return responseJson.data.products;
 };
 
-export default function ProductIndex() {
-  const { products, pageInfo, nextCursor } = useLoaderData();
-  const fetcher = useFetcher();
-  const [productData, setProductData] = useState(products);
+// Loader for initial products
+export const loader = async ({ request }) => {
+const { admin } = await authenticate.admin(request);
+const initialProducts = await fetchProducts(admin);
 
-  // Update product data when pagination fetcher completes
+return {
+  initialProducts: initialProducts.edges.map(({ node }) => node),
+  pageInfo: initialProducts.pageInfo,
+};
+};
+
+// Action for pagination requests
+export const action = async ({ request }) => {
+const formData = await request.formData();
+const cursor = formData.get("cursor");
+const direction = formData.get("direction");
+const { admin } = await authenticate.admin(request);
+
+const products = await fetchProducts(admin, cursor, direction);
+
+return {
+  products: products.edges.map(({ node }) => node),
+  pageInfo: products.pageInfo,
+};
+};
+
+
+export default function IndexTableWithPaginationExample() {
+  const { initialProducts, pageInfo: initialPageInfo } = useLoaderData();
+  const fetcher = useFetcher();
+  const [productData, setProductData] = useState(initialProducts);
+  const [pageInfo, setPageInfo] = useState(initialPageInfo);
+  const resourceName = {
+      singular: 'product',
+      plural: 'products',
+  };
+
   useEffect(() => {
-    if (fetcher.data) {
+      if (fetcher.data) {
       setProductData(fetcher.data.products);
-    }
+      setPageInfo(fetcher.data.pageInfo);
+      }
   }, [fetcher.data]);
 
-  // Prepare table rows
-  const rows = productData.map((product) => [
-    product.title,
-    product.handle,
-    product.status,
-    product.variants.edges[0]?.node.price || "-",
-    product.variants.edges[0]?.node.barcode || "-",
-    new Date(product.variants.edges[0]?.node.createdAt).toLocaleDateString(),
-  ]);
+  const handlePagination = (cursor, direction) => {
+      fetcher.submit(
+      { cursor, direction },
+      { method: "post", action: "/app/pr1" } // Replace with the correct route
+      );
+  };
 
-  return (
-    <Page title="Product Index">
+  const {selectedResources, allResourcesSelected, handleSelectionChange} =
+      useIndexResourceState(productData);
+
+  const rowMarkup = productData.map(
+      (product,
+      index,
+      ) => (
+      <IndexTable.Row
+          id={product.id}
+          key={product.id}
+          selected={selectedResources.includes(product.id)}
+          position={index}
+      >
+          <IndexTable.Cell>
+          <Text variant="bodyMd" fontWeight="bold" as="span">
+              {product.title}
+          </Text>
+          </IndexTable.Cell>
+          {/* <IndexTable.Cell>{product.title}</IndexTable.Cell> */}
+          <IndexTable.Cell>{product.handle}</IndexTable.Cell>
+          <IndexTable.Cell>{product.status}</IndexTable.Cell>
+          <IndexTable.Cell>
+          <Text as="span" alignment="end" numeric>
+              {product.variants.edges[0]?.node.price || "-"}
+          </Text>
+          </IndexTable.Cell>
+          {/* <IndexTable.Cell>1111</IndexTable.Cell> */}
+      </IndexTable.Row>
+      ),
+  );
+
+  return (    
+  <Page title="Product Index">
       <Card>
-        <DataTable
-          columnContentTypes={[
-            "text",
-            "text",
-            "text",
-            "numeric",
-            "text",
-            "text",
-          ]}
-          headings={["Title", "Handle", "Status", "Price", "Barcode", "Created At"]}
-          rows={rows}
-        />
+          <IndexTable
+              condensed={useBreakpoints().smDown}
+              resourceName={resourceName}
+              itemCount={productData.length}
+              selectedItemsCount={
+                  allResourcesSelected ? 'All' : selectedResources.length
+              }
+              onSelectionChange={handleSelectionChange}
+              headings={[
+                  {title: 'Title'},
+                  {title: 'Handle'},
+                  {title: 'Status'},
+                  {title: 'Price', alignment: 'end'},
+                  // {title: 'Created At'},
+              ]}
+              pagination={{
+                  hasNext: pageInfo.hasNextPage,
+                  onNext: () => {handlePagination(pageInfo.endCursor, "next")},
+                  hasPrevious: pageInfo.hasPreviousPage,
+                  onPrevious: () => {handlePagination(pageInfo.startCursor, "previous")},
+              }}
+          >
+              {rowMarkup}
+          </IndexTable>
       </Card>
-
-      <Pagination
-        hasNext={pageInfo.hasNextPage}
-        onNext={() => {
-          fetcher.load(`/products?cursor=${nextCursor}`);
-        }}
-        hasPrevious={false} // Customize if you want to add backward pagination
-      />
-    </Page>
+  </Page>
   );
 }

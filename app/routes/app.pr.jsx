@@ -1,83 +1,123 @@
-// import { json, redirect } from "@remix-run/node";
-// import { useLoaderData, useActionData } from "@remix-run/react";
-import { useState } from "react";
-import {
-  Page,
-  Layout,
-  Card,
-  Button,
-  // Text,
-  // Modal,
-  // BlockStack,
-  // DataTable,
-  Toast,
-  Frame,
-} from "@shopify/polaris";
-import { ProductDetailsBox, ProductIndexTable1 } from "./components";
-// import header from "./utils/headers";
-// import { authenticate } from "../shopify.server";
+import { useLoaderData, useFetcher } from "@remix-run/react";
+import { useEffect, useState } from "react";
+import { Card, Page, Pagination, DataTable } from "@shopify/polaris";
+import { authenticate } from "../shopify.server";
 
-export default function SelectProduct() {
-  const [formState, setFormState] = useState({ selectedProducts: [] });
-  const [toastActive, setToastActive] = useState(false);
 
-  const handleProductPicker = () => {
-    console.log("kucdjns");
-    
-    window.shopify.resourcePicker({
-      type: "product",
-      multiple: true,
-      action: "select",
-      filter: { variants: false },
-    }).then((products) => {
-      if (products) {
-        const allSelectedProducts = products.map((product) => {
-          const { images, id, variants, title, handle } = product;
-          return {
-            productId: id,
-            productVariantId: variants[0].id,
-            productTitle: title,
-            productHandle: handle,
-            productAlt: images[0]?.altText,
-            productImage: images[0]?.originalSrc,
-          };
-        });
-
-        setFormState((prevState) => ({
-          ...prevState,
-          selectedProducts: allSelectedProducts,
-        }));
-
-        // Optional: Show a toast notification when products are selected
-        // setToastActive(true);
+// Function to fetch products from Shopify API
+const fetchProducts = async (admin, cursor = null, direction = "next") => {
+  const queryDirection = direction === "next" ? "after" : "before";
+  const firstORLast = direction === "next" ? "first" : "last";
+  const response = await admin.graphql(
+    `#graphql
+      query fetchProducts($cursor: String) {
+        products(${firstORLast}: 10, ${queryDirection}: $cursor, sortKey:TITLE) {
+          edges {
+            node {
+              id
+              title
+              handle
+              status
+              variants(first: 10) {
+                edges {
+                  node {
+                    id
+                    price
+                    barcode
+                    createdAt
+                  }
+                }
+              }
+            }
+            cursor
+          }
+          pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+          }
+        }
       }
-    }).catch((error) => {
-      console.error("Error selecting products:", error);
-    });
+    `,
+    { variables: { cursor } }
+  );
+
+  const responseJson = await response.json();
+  return responseJson.data.products;
+};
+
+// Loader for initial products
+export const loader = async ({ request }) => {
+  const { admin } = await authenticate.admin(request);
+  const initialProducts = await fetchProducts(admin);
+
+  return {
+    initialProducts: initialProducts.edges.map(({ node }) => node),
+    pageInfo: initialProducts.pageInfo,
+  };
+};
+
+// Action for pagination requests
+export const action = async ({ request }) => {
+  const formData = await request.formData();
+  const cursor = formData.get("cursor");
+  const direction = formData.get("direction");
+  const { admin } = await authenticate.admin(request);
+
+  const products = await fetchProducts(admin, cursor, direction);
+
+  return {
+    products: products.edges.map(({ node }) => node),
+    pageInfo: products.pageInfo,
+  };
+};
+
+export default function ProductIndex() {
+  const { initialProducts, pageInfo: initialPageInfo } = useLoaderData();
+  const fetcher = useFetcher();
+  const [productData, setProductData] = useState(initialProducts);
+  const [pageInfo, setPageInfo] = useState(initialPageInfo);
+
+  useEffect(() => {
+    if (fetcher.data) {
+      setProductData(fetcher.data.products);
+      setPageInfo(fetcher.data.pageInfo);
+    }
+  }, [fetcher.data]);
+
+  const handlePagination = (cursor, direction) => {
+    fetcher.submit(
+      { cursor, direction },
+      { method: "post", action: "/app/pr7" } // Replace with the correct route
+    );
   };
 
-  const handleToastDismiss = () => setToastActive(false);
+  const rows = productData.map((product) => [
+    product.title,
+    product.handle,
+    product.status,
+    product.variants.edges[0]?.node.price || "-",
+    // new Date(product.variants.edges[0]?.node.createdAt).toLocaleDateString(),
+    1111,
+  ]);
 
   return (
-    <Frame>
-    <Page title="Select Products">
-      <Layout>
-        <Layout.Section>
-          <Card sectioned>
-            <Button onClick={handleProductPicker}>Select Products</Button>
-            {/* Example of rendering selected products */}
-            {formState.selectedProducts.length > 0 && (
-              <ProductIndexTable1 products={formState.selectedProducts} />
-            )}
-          </Card>
-        </Layout.Section>
-      </Layout>
-      <Toast
-        content="Products selected successfully!"
-        open={toastActive}
-        onDismiss={handleToastDismiss}
+    <Page title="Product Index">
+      <Card>
+        <DataTable
+          columnContentTypes={["text", "text", "text", "numeric", "text"]}
+          headings={["Title", "Handle", "Status", "Price", "Created At"]}
+          rows={rows}
+        />
+      </Card>
+
+      <Pagination
+        hasNext={pageInfo.hasNextPage}
+        onNext={() => handlePagination(pageInfo.endCursor, "next")}
+        hasPrevious={pageInfo.hasPreviousPage}
+        onPrevious={() => handlePagination(pageInfo.startCursor, "previous")}
       />
     </Page>
-    </Frame>
   );
 }
